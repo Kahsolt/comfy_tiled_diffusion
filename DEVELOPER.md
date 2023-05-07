@@ -68,4 +68,4 @@ Once all the tiles have been controlled, upscaled, and processed:
 5. Merging the tiles to create a single image.
   * The individual tiles are combined to reconstruct the complete image.
 
-You can find the implementation of this method starting from [this line](https://github.com/paulo-coronado/comfy_tiled_diffusion/blob/23bccfd0010035c1e27d830f503bbfdd08533aab/nodes.py#L132).
+You can find the implementation of this method starting from [this line](https://github.com/paulo-coronado/comfy_tiled_diffusion/blob/da72a1758800a5df3132ab4a688c5bdbd9251173/nodes.py#L133).
