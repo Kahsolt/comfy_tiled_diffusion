@@ -18,8 +18,6 @@ git clone https://github.com/paulo-coronado/comfy_tiled_diffusion/
 1. Add the "TiledDiffusionKSampler" node to your ComfyUI workflow. This node serves as the entry point for applying the advanced tiling techniques to your images;
 2. Configure the parameters and settings according to your desired image enhancement requirements.
 
-_For more examples and usage, please refer to the [Wiki][wiki]._
-
 ## Release History
 
 * 0.0.1
