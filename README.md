@@ -21,9 +21,9 @@ git clone https://github.com/paulo-coronado/comfy_tiled_diffusion/
 ## Release History
 
 * 0.0.1
-    * CN 1.1 implemented
-    * Image splitting/tilling
-    * Tiled Diffusion implementation *(work in progress)*
+    * CN 1.1 added ✅
+    * Image splitting/tilling added ✅
+    * Tiled Diffusion implementation *(in progress)* 🛠️
 
 ## Contributing
 
