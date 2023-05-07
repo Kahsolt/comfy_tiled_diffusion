@@ -35,27 +35,27 @@ class KSamplerTiled:
     def INPUT_TYPES(cls):
         return {"required": {
             "model": ("MODEL",),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-                "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
-                "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0}),
-                "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
-                "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
-                "positive": ("CONDITIONING",),
-                "negative": ("CONDITIONING",),
-                "latent_image": ("LATENT",),
-                "scale": ("INT", {"default": 2, "min": 1, "max": 16, "step": 1}),
-                "controlnet_tile_model": (folder_paths.get_filename_list("controlnet"), ),
-                "controlnet_pyrUp": ("INT", {"default": 3, "min": 1, "max": 10, "step": 1}),
-                "concurrent_tiles": ("INT", {"default": 1, "min": 1, "max": 64, "step": 1}),
-                "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "preview_image": (["Enabled", "Disabled"],),
-                },
-                "optional": {"optional_vae": ("VAE",)},
-                "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
-                }
+            "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+            "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0}),
+            "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
+            "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
+            "positive": ("CONDITIONING",),
+            "negative": ("CONDITIONING",),
+            "latent_image": ("LATENT",),
+            "scale": ("INT", {"default": 2, "min": 1, "max": 16, "step": 1}),
+            "controlnet_tile_model": (folder_paths.get_filename_list("controlnet"), ),
+            "controlnet_pyrUp": ("INT", {"default": 3, "min": 1, "max": 10, "step": 1}),
+            "concurrent_tiles": ("INT", {"default": 1, "min": 1, "max": 64, "step": 1}),
+            "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+            "preview_image": (["Enabled", "Disabled"],),
+        },
+            "optional": {"optional_vae": ("VAE",)},
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+        }
 
     RETURN_TYPES = ("MODEL", "CONDITIONING", "CONDITIONING",
-                    "LATENT", "VAE", "IMAGE", )
+                    "LATENT", "VAE", "IMAGE")
     RETURN_NAMES = ("MODEL", "CONDITIONING+", "CONDITIONING-",
                     "LATENT", "VAE", "IMAGE", )
     OUTPUT_NODE = True
