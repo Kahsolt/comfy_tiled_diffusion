@@ -10,9 +10,8 @@ from PIL.PngImagePlugin import PngInfo
 import numpy as np
 from torch import Tensor
 
-from nodes import common_ksampler
-import folder_paths
 import comfy.samplers
+import folder_paths
 
 from .utils import *
 
@@ -36,35 +35,27 @@ class KSamplerTiled:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {
-            "required": {
-                # sampling (KSampler compat.)
-                "model": ("MODEL",),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-                "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
-                "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0}),
-                "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
-                "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
-                "positive": ("CONDITIONING",),
-                "negative": ("CONDITIONING",),
-                "latent_image": ("LATENT",),
-                "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                # tiling
-                "tile_size": ("INT", {"default": 96, "min": 32, "max": 256, "step": 16}),
-                "tile_batch_size": ("INT", {"default": 4, "min": 1, "max": 64, "step": 1}),
-                # controlnet
-                "controlnet_model": (folder_paths.get_filename_list("controlnet"),),
-                "controlnet_pyrUp": ("INT", {"default": 3, "min": 1, "max": 10, "step": 1}),
-                # misc
-                "preview_image": (["Enabled", "Disabled"],),
-            },
-            "optional": {
-                "optional_vae": ("VAE",)
-            },
-            "hidden": {
-                "prompt": "PROMPT", 
-                "extra_pnginfo": "EXTRA_PNGINFO",
-            },
+        return {"required": {
+            "model": ("MODEL",),
+            "positive": ("CONDITIONING",),
+            "negative": ("CONDITIONING",),
+            "latent_image": ("LATENT",),
+            "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+            "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0}),
+            "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
+            "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
+            "latent_tile_width": ("INT", {"default": 112, "min": 16, "max": 256, "step": 16}),
+            "latent_tile_height": ("INT", {"default": 112, "min": 16, "max": 256, "step": 16}),
+            "latent_tile_overlap": ("INT", {"default": 104, "min": 0, "max": 256, "step": 8}),
+            "latent_batch_size": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
+            "upscale_model": (folder_paths.get_filename_list("upscale_models"), ),
+            "scale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 16.0, "step": 0.1}),
+            "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+            "preview_image": (["Enabled", "Disabled"],),
+        },
+            "optional": {"optional_vae": ("VAE",)},
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ("LATENT", "IMAGE")
@@ -72,15 +63,7 @@ class KSamplerTiled:
     FUNCTION = "sample"
     CATEGORY = "sampling"
 
-    def sample(self, 
-            model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise,
-            tile_size, tile_batch_size,
-            controlnet_tile_model, controlnet_pyrUp,
-            preview_image,
-            optional_vae=(None,),
-            prompt=None, extra_pnginfo=None,
-        ):
-
+    def sample(self, model, positive, negative, latent_image, seed, steps, cfg, sampler_name, scheduler, latent_tile_width, latent_tile_height, latent_tile_overlap, latent_batch_size, upscale_model, scale_factor, denoise, preview_image, optional_vae=(None,), prompt=None, extra_pnginfo=None):
         # Functions for previewing images in Ksampler
         def map_filename(filename):
             prefix_len = len(os.path.basename(filename_prefix))
@@ -138,7 +121,6 @@ class KSamplerTiled:
 
         filename_prefix = "KST_{:02d}".format(int(time.time()))
 
-        output_tiles = []
         vae = optional_vae
 
         if vae == (None,):
@@ -147,32 +129,24 @@ class KSamplerTiled:
         # Initialize latent
         latent: Tensor = None
 
-        # Split latent image in tiles
-        tiles = get_tiles(latent_image, tile_size)
+        original_image = decode(vae, latent_image)
 
-        # For each tile: decode, upscale, apply controlnet and ksampler
-        for i, tile in enumerate(tiles):
-            # Decode, upscale and encode
-            tile_image = decode(vae, tile)
-            upscaled_image = upscale_image(tile_image, tile_size)
+        # Upscale and resize image
+        upscaled_image = upscale_image(original_image, load_upscale_model(upscale_model))
+        resized_image = scale_image(original_image, upscaled_image, scale_factor)
 
-            # Apply controlnet
-            positive_control = apply_controlnet_tile(positive, controlnet_tile_model, tile_image, controlnet_pyrUp)
+        print(resized_image.shape)
 
-            # Sample using KSampler
-            samples = common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive_control, negative, {'samples': encode(vae, upscaled_image)}, denoise=denoise)
-
-            output_tiles.append(samples[0]["samples"])
-
-        # Merge the latent samples into a single tensor
-        latent = merge_images(output_tiles)
+        # Sample using MultiSampler
+        samples = multi_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, {
+                                'samples': encode(vae, resized_image)}, denoise=denoise)
 
         if preview_image == "Disabled":
-            return {"ui": {"images": list()}, "result": (latent, KSamplerTiled.empty_image)}
+            return {"ui": {"images": list()}, "result": (model, positive, negative, {"samples": samples[0]["samples"]}, vae, KSamplerTiled.empty_image,)}
         else:
-            images = decode(vae, latent).cpu()
+            images = vae.decode(samples[0]["samples"]).cpu()
             results = preview_images(images, filename_prefix)
-            return {"ui": {"images": results}, "result": (latent, images)}
+            return {"ui": {"images": results}, "result": (model, positive, negative, {"samples": samples[0]["samples"]}, vae, images,)}
 
 
 NODE_CLASS_MAPPINGS = {

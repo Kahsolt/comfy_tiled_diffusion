@@ -1,15 +1,19 @@
 import os
 import math
-from PIL import Image
+import os
 
 import cv2
 import numpy as np
 import torch
+from PIL import Image
 
-import folder_paths
 import comfy.samplers
 import comfy.utils
+import folder_paths
+from comfy import model_management
 from comfy_extras.chainner_models import model_loading
+
+from .td_sample import prepare_noise, sample
 
 annotator_ckpts_path = os.path.join(os.path.dirname(__file__), "ckpts")
 
@@ -216,14 +220,70 @@ def find_k_sampler_id(prompt, sampler_state=None, seed=None, steps=None, cfg=Non
         last_returned_ids.clear()
         return None
 
+def load_vae(vae_name):
+    """
+    Extracts the vae with a given name from the "vae" array in loaded_objects.
+    If the vae is not found, creates a new VAE object with the given name and adds it to the "vae" array.
+    """
+    global loaded_objects
 
-''' Tiling '''
+    # Check if vae_name exists in "vae" array
+    if any(entry[0] == vae_name for entry in loaded_objects["vae"]):
+        # Extract the second tuple entry of the checkpoint
+        vae = [entry[1]
+               for entry in loaded_objects["vae"] if entry[0] == vae_name][0]
+    else:
+        vae_path = folder_paths.get_full_path("vae", vae_name)
+        vae = comfy.sd.VAE(ckpt_path=vae_path)
+        # Update loaded_objects[] array
+        loaded_objects["vae"].append((vae_name, vae))
+    return vae
 
-def get_tiles(latent, scale, overlap:int=64):
-    # FIXME: here `scale` is sematically `n_splits` in each spatial dim
-    # however, we recommend it to be actual tile h/w size respectly (and add a param `overlap`)
-    # to easy handle non-square images, and estimate max-vram usage (it is determined by the largest tile alone)
-    # NOTE: this function should only be called once, before sampling starts
+def vae_encode_crop_pixels(pixels):
+    x = (pixels.shape[1] // 8) * 8
+    y = (pixels.shape[2] // 8) * 8
+    if pixels.shape[1] != x or pixels.shape[2] != y:
+        x_offset = (pixels.shape[1] % 8) // 2
+        y_offset = (pixels.shape[2] % 8) // 2
+        pixels = pixels[:, x_offset:x + x_offset, y_offset:y + y_offset, :]
+    return pixels
+
+def encode(vae, pixels):
+    pixels = vae_encode_crop_pixels(pixels)
+    t = vae.encode(pixels[:, :, :, :3])
+    return t
+
+def decode(vae, samples):
+    return vae.decode(samples["samples"])
+
+def load_upscale_model(model_name):
+    model_path = folder_paths.get_full_path("upscale_models", model_name)
+    sd = comfy.utils.load_torch_file(model_path)
+    out = model_loading.load_state_dict(sd).eval()
+    return out
+
+def upscale_image(image, upscale_model):
+        device = model_management.get_torch_device()
+        upscale_model.to(device)
+        in_img = image.movedim(-1,-3).to(device)
+        s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a), tile_x=128 + 64, tile_y=128 + 64, overlap = 8, upscale_amount=upscale_model.scale)
+        upscale_model.cpu()
+        s = torch.clamp(s.movedim(-3,-1), min=0, max=1.0)
+        return s
+
+def scale_image(original, upscaled, scale):
+    original_samples = original.movedim(-1, 1)
+    upscaled_samples = upscaled.movedim(-1, 1)
+
+    width = int(original_samples.shape[3] * scale)
+    height = int(original_samples.shape[2] * scale)
+
+    s = comfy.utils.common_upscale(upscaled_samples, width, height, 'area', 'center')
+    s = s.movedim(1, -1)
+
+    return s
+
+def get_tiles(latent, scale):
     """
     Splits a latent vector into a list of tiles with the given tile height and width.
     If the image dimensions are not evenly divisible by the tile size, adds latent noise padding.
@@ -308,6 +368,52 @@ def preprocess(image, pyrUp_iters=3):
         detected_map = cv2.pyrUp(detected_map)
     return detected_map
 
+def HWC3(x):
+    assert x.dtype == np.uint8
+    if x.ndim == 2:
+        x = x[:, :, None]
+    assert x.ndim == 3
+    H, W, C = x.shape
+    assert C == 1 or C == 3 or C == 4
+    if C == 3:
+        return x
+    if C == 1:
+        return np.concatenate([x, x, x], axis=2)
+    if C == 4:
+        color = x[:, :, 0:3].astype(np.float32)
+        alpha = x[:, :, 3:4].astype(np.float32) / 255.0
+        y = color * alpha + 255.0 * (1.0 - alpha)
+        y = y.clip(0, 255).astype(np.uint8)
+        return y
+
+def resize_image(input_image, resolution=None):
+    H, W, C = input_image.shape
+    H = float(H)
+    W = float(W)
+    k = 0
+    if resolution is not None:
+        k = float(resolution) / min(H, W)
+        H *= k
+        W *= k
+    H = int(np.round(H / 64.0)) * 64
+    W = int(np.round(W / 64.0)) * 64
+    img = cv2.resize(input_image, (W, H),
+                     interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
+    return img
+
+def img_tensor_to_np(img_tensor):
+    img_tensor = img_tensor.clone()
+    img_tensor = img_tensor * 255.0
+    mask_list = [x.squeeze().numpy().astype(np.uint8)
+                 for x in torch.split(img_tensor, 1)]
+    return mask_list
+
+def img_np_to_tensor(img_np_list):
+    out_list = []
+    for img_np in img_np_list:
+        out_list.append(torch.from_numpy(img_np.astype(np.float32) / 255.0))
+    return torch.stack(out_list)
+
 def common_annotator_call(annotator_callback, tensor_image, *args):
     tensor_image_list = img_tensor_to_np(tensor_image)
     out_list = []
@@ -318,3 +424,28 @@ def common_annotator_call(annotator_callback, tensor_image, *args):
         out_list.append(cv2.resize(HWC3(call_result), (W, H),
                         interpolation=cv2.INTER_AREA))
     return out_list
+
+def multi_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
+    device = comfy.model_management.get_torch_device()
+    latent_image = latent["samples"]
+
+    if disable_noise:
+        noise = torch.zeros(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, device="cpu")
+    else:
+        skip = latent["batch_index"] if "batch_index" in latent else 0
+        noise = prepare_noise(latent_image, seed, skip)
+
+    noise_mask = None
+    if "noise_mask" in latent:
+        noise_mask = latent["noise_mask"]
+
+    pbar = comfy.utils.ProgressBar(steps)
+    def callback(step, x0, x):
+        pbar.update_absolute(step + 1)
+
+    samples = sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
+                                  denoise=denoise, disable_noise=disable_noise, start_step=start_step, last_step=last_step,
+                                  force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback)
+    out = latent.copy()
+    out["samples"] = samples
+    return (out, )
