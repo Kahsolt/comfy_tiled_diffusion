@@ -49,23 +49,3 @@ NODE_CLASS_MAPPINGS = {
 Make sure to replace "CustomNodeName" with the actual name you want to give to your custom node.
 
 Feel free to add more fields and customize the node according to your requirements.
-
-# Tiled Diffusion for ComfyUI Method
-
-The Tiled Diffusion method in ComfyUI involves the following steps:
-
-1. Splitting the latent image into tiles.
-  * Each tile represents a smaller portion of the image.
-2. Applying the ControlNet algorithm to each tile.
-  * ControlNet helps manipulate and control the properties of the tile.
-3. Upscaling the tiles.
-  * The tiles are resized to a higher resolution.
-4. Performing KSample processing on each tile.
-  * KSample involves sampling and processing the tile data.
-
-Once all the tiles have been controlled, upscaled, and processed:
-
-5. Merging the tiles to create a single image.
-  * The individual tiles are combined to reconstruct the complete image.
-
-You can find the implementation of this method starting from [this line](https://github.com/paulo-coronado/comfy_tiled_diffusion/blob/da72a1758800a5df3132ab4a688c5bdbd9251173/nodes.py#L133).
