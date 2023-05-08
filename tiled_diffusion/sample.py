@@ -1,7 +1,11 @@
+import math
+
 import torch
+
 import comfy.model_management
 import comfy.samplers
-import math
+
+""" Tiled Diffusion Sample Methods """
 
 def prepare_noise(latent_image, seed, skip=0):
     """

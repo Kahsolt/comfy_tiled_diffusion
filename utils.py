@@ -1,4 +1,3 @@
-import os
 import math
 import os
 
@@ -13,11 +12,11 @@ import folder_paths
 from comfy import model_management
 from comfy_extras.chainner_models import model_loading
 
-from .td_sample import prepare_noise, sample
+from .tiled_diffusion.sample import prepare_noise, sample
 
 annotator_ckpts_path = os.path.join(os.path.dirname(__file__), "ckpts")
 
-''' Image '''
+""" Image """
 
 def tensor2pil(image: torch.Tensor) -> Image.Image:
     return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
@@ -83,8 +82,7 @@ def upscale_image(image, scale):
 
     return upscaled_image
 
-
-''' Models '''
+""" Models """
 
 def update_loaded_objects(prompt):
     global loaded_objects
@@ -127,8 +125,7 @@ def load_upscale_model(model_name):
     out = model_loading.load_state_dict(sd).eval()
     return out
 
-
-''' Models (VAE) '''
+""" Models (VAE) """
 
 def load_vae(vae_name):
     """
@@ -166,8 +163,7 @@ def encode(vae, pixels):
 def decode(vae, samples):
     return vae.decode(samples)
 
-
-''' Sampling '''
+""" Sampling """
 
 def find_k_sampler_id(prompt, sampler_state=None, seed=None, steps=None, cfg=None,
                       sampler_name=None, scheduler=None, denoise=None, preview_image=None):
@@ -330,8 +326,7 @@ def merge_images(tiles, overlap:int=64):
 
     return image
 
-
-''' ControlNet '''
+""" ControlNet """
 
 def load_controlnet(control_net_name):
     controlnet_path = folder_paths.get_full_path(
@@ -368,52 +363,6 @@ def preprocess(image, pyrUp_iters=3):
         detected_map = cv2.pyrUp(detected_map)
     return detected_map
 
-def HWC3(x):
-    assert x.dtype == np.uint8
-    if x.ndim == 2:
-        x = x[:, :, None]
-    assert x.ndim == 3
-    H, W, C = x.shape
-    assert C == 1 or C == 3 or C == 4
-    if C == 3:
-        return x
-    if C == 1:
-        return np.concatenate([x, x, x], axis=2)
-    if C == 4:
-        color = x[:, :, 0:3].astype(np.float32)
-        alpha = x[:, :, 3:4].astype(np.float32) / 255.0
-        y = color * alpha + 255.0 * (1.0 - alpha)
-        y = y.clip(0, 255).astype(np.uint8)
-        return y
-
-def resize_image(input_image, resolution=None):
-    H, W, C = input_image.shape
-    H = float(H)
-    W = float(W)
-    k = 0
-    if resolution is not None:
-        k = float(resolution) / min(H, W)
-        H *= k
-        W *= k
-    H = int(np.round(H / 64.0)) * 64
-    W = int(np.round(W / 64.0)) * 64
-    img = cv2.resize(input_image, (W, H),
-                     interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
-    return img
-
-def img_tensor_to_np(img_tensor):
-    img_tensor = img_tensor.clone()
-    img_tensor = img_tensor * 255.0
-    mask_list = [x.squeeze().numpy().astype(np.uint8)
-                 for x in torch.split(img_tensor, 1)]
-    return mask_list
-
-def img_np_to_tensor(img_np_list):
-    out_list = []
-    for img_np in img_np_list:
-        out_list.append(torch.from_numpy(img_np.astype(np.float32) / 255.0))
-    return torch.stack(out_list)
-
 def common_annotator_call(annotator_callback, tensor_image, *args):
     tensor_image_list = img_tensor_to_np(tensor_image)
     out_list = []
@@ -424,6 +373,8 @@ def common_annotator_call(annotator_callback, tensor_image, *args):
         out_list.append(cv2.resize(HWC3(call_result), (W, H),
                         interpolation=cv2.INTER_AREA))
     return out_list
+
+""" MultiDiffusion """
 
 def multi_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
     device = comfy.model_management.get_torch_device()

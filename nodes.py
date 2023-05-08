@@ -1,20 +1,19 @@
 # KSamplerTiled by Paulo Coronado - April 2023
 
+import json
 import os
 import sys
-import json
 import time
-from PIL import Image
-from PIL.PngImagePlugin import PngInfo
 
 import numpy as np
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from torch import Tensor
 
 import comfy.samplers
 import folder_paths
 
 from .utils import *
-
 
 # Global variables
 last_returned_ids = {}
@@ -24,9 +23,7 @@ sys.path.append(comfy_dir)
 font_path = os.path.join(my_dir, 'arial.ttf')
 MAX_RESOLUTION = 1024
 
-
 class KSamplerTiled:
-
     empty_image = pil2tensor(Image.new('RGBA', (1, 1), (0, 0, 0, 0)))
 
     def __init__(self):
@@ -35,31 +32,35 @@ class KSamplerTiled:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {
-            "model": ("MODEL",),
-            "positive": ("CONDITIONING",),
-            "negative": ("CONDITIONING",),
-            "latent_image": ("LATENT",),
-            "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-            "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
-            "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0}),
-            "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
-            "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
-            "latent_tile_width": ("INT", {"default": 112, "min": 16, "max": 256, "step": 16}),
-            "latent_tile_height": ("INT", {"default": 112, "min": 16, "max": 256, "step": 16}),
-            "latent_tile_overlap": ("INT", {"default": 104, "min": 0, "max": 256, "step": 8}),
-            "latent_batch_size": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
-            "upscale_model": (folder_paths.get_filename_list("upscale_models"), ),
-            "scale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 16.0, "step": 0.1}),
-            "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-            "preview_image": (["Enabled", "Disabled"],),
-        },
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "positive": ("CONDITIONING",),
+                "negative": ("CONDITIONING",),
+                "latent_image": ("LATENT",),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+                "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0}),
+                "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
+                "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
+                "latent_tile_width": ("INT", {"default": 112, "min": 16, "max": 256, "step": 16}),
+                "latent_tile_height": ("INT", {"default": 112, "min": 16, "max": 256, "step": 16}),
+                "latent_tile_overlap": ("INT", {"default": 104, "min": 0, "max": 256, "step": 8}),
+                "latent_batch_size": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
+                "upscale_model": (folder_paths.get_filename_list("upscale_models"), ),
+                "scale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 16.0, "step": 0.1}),
+                "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "preview_image": (["Enabled", "Disabled"],),
+            },
             "optional": {"optional_vae": ("VAE",)},
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
-    RETURN_TYPES = ("LATENT", "IMAGE")
-
+    RETURN_TYPES = ("MODEL", "CONDITIONING", "CONDITIONING",
+                    "LATENT", "VAE", "IMAGE")
+    RETURN_NAMES = ("MODEL", "CONDITIONING+", "CONDITIONING-",
+                    "LATENT", "VAE", "IMAGE", )
+    OUTPUT_NODE = True
     FUNCTION = "sample"
     CATEGORY = "sampling"
 
@@ -126,21 +127,17 @@ class KSamplerTiled:
         if vae == (None,):
             preview_image = "Disabled"
 
-        # Initialize latent
-        latent: Tensor = None
-
         original_image = decode(vae, latent_image)
 
         # Upscale and resize image
         upscaled_image = upscale_image(original_image, load_upscale_model(upscale_model))
         resized_image = scale_image(original_image, upscaled_image, scale_factor)
 
-        print(resized_image.shape)
-
+        # TODO Update multi_ksampler function. It is working as a common sampler
         # Sample using MultiSampler
         samples = multi_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, {
                                 'samples': encode(vae, resized_image)}, denoise=denoise)
-
+        
         if preview_image == "Disabled":
             return {"ui": {"images": list()}, "result": (model, positive, negative, {"samples": samples[0]["samples"]}, vae, KSamplerTiled.empty_image,)}
         else:
@@ -148,10 +145,10 @@ class KSamplerTiled:
             results = preview_images(images, filename_prefix)
             return {"ui": {"images": results}, "result": (model, positive, negative, {"samples": samples[0]["samples"]}, vae, images,)}
 
-
 NODE_CLASS_MAPPINGS = {
     "KSamplerTiled": KSamplerTiled,
 }
+
 NODE_DISPLAY_NAME_MAPPINGS = {
     "KSamplerTiled": "Tiled KSampler"
 }

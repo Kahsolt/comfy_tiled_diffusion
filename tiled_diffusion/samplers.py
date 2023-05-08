@@ -9,6 +9,7 @@ from comfy.k_diffusion import sampling as k_diffusion_sampling
 from comfy.ldm.models.diffusion.ddim import DDIMSampler
 from comfy.ldm.modules.diffusionmodules.util import make_ddim_timesteps
 
+""" Tiled Diffusion Sampler Methods """
 
 #The main sampling function shared by all the samplers
 #Returns predicted noise
