@@ -1,4 +1,5 @@
 # Tiled Diffusion for ComfyUI
+
 > Enhance, Upscale, and Fix Images with Advanced Tiling Techniques
 
 Experience the next level of image enhancement, upscaling, and fixing with the ComfyUI Custom Node. This innovative tool combines three cutting-edge tiling techniques - [ControlNet v1.1 Tile](https://github.com/lllyasviel/ControlNet-v1-1-nightly), [Mixture of Diffusers](https://github.com/albarji/mixture-of-diffusers) and [MultiDiffusion](https://multidiffusion.github.io/) - to transform your images into stunning, high-quality visuals.
