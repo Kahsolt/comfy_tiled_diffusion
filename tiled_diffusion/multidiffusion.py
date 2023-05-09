@@ -1,11 +1,11 @@
 
 import torch
-from tile_methods.abstractdiffusion import TiledDiffusion
-from tile_utils.typing import *
-from tile_utils.utils import *
+from k_diffusion.external import CompVisDenoiser
 
-from modules import devices, extra_networks
-from modules.shared import state
+from .abstractdiffusion import TiledDiffusion
+from .modules import extra_networks, processing
+from .modules.typing import *
+from .modules.utils import *
 
 
 class MultiDiffusion(TiledDiffusion):
@@ -14,7 +14,7 @@ class MultiDiffusion(TiledDiffusion):
         https://arxiv.org/abs/2302.08113
     """
 
-    def __init__(self, p:StableDiffusionProcessing, *args, **kwargs):
+    def __init__(self, p:processing.StableDiffusionProcessing, *args, **kwargs):
         super().__init__(p, *args, **kwargs)
         assert p.sampler_name != 'UniPC', 'MultiDiffusion is not compatible with UniPC!'
 
@@ -25,7 +25,7 @@ class MultiDiffusion(TiledDiffusion):
         if self.is_kdiff:
             # For K-Diffusion sampler with uniform prompt, we hijack into the inner model for simplicity
             # Otherwise, the masked-redraw will break due to the init_latent
-            self.sampler: CFGDenoiser
+            # self.sampler: sd_samplers_kdiffusion.CFGDenoiser
             self.sampler_forward = self.sampler.inner_model.forward
             self.sampler.inner_model.forward = self.kdiff_forward
         else:
@@ -49,15 +49,11 @@ class MultiDiffusion(TiledDiffusion):
             else:
                 self.x_pred_buffer.zero_()
 
-    @custom_bbox
-    def init_custom_bbox(self, *args):
-        super().init_custom_bbox(*args)
-
         for bbox in self.custom_bboxes:
             if bbox.blend_mode == BlendMode.BACKGROUND:
                 self.weights[bbox.slicer] += 1.0
 
-    ''' ↓↓↓ kernel hijacks ↓↓↓ '''
+    """ ↓↓↓ kernel hijacks ↓↓↓ """
 
     def repeat_cond_dict(self, cond_input:CondDict, bboxes:List[CustomBBox]) -> CondDict:
         cond = cond_input['c_crossattn'][0]
@@ -76,7 +72,6 @@ class MultiDiffusion(TiledDiffusion):
         return {"c_crossattn": [cond], "c_concat": [image_cond_tile]}
 
     @torch.no_grad()
-    @keep_signature
     def kdiff_forward(self, x_in:Tensor, sigma_in:Tensor, cond:CondDict) -> Tensor:
         '''
         This function hijacks `k_diffusion.external.CompVisDenoiser.forward()`
@@ -100,12 +95,9 @@ class MultiDiffusion(TiledDiffusion):
         def custom_func(x:Tensor, bbox_id:int, bbox:CustomBBox):
             return self.kdiff_custom_forward(x, sigma_in, cond, bbox_id, bbox, self.sampler_forward)
         
-
-        print('K-DIFF RETURN')
         return self.sample_one_step(x_in, org_func, repeat_func, custom_func)
 
     @torch.no_grad()
-    @keep_signature
     def ddim_forward(self, x_in:Tensor, cond_in:Union[CondDict, Tensor], ts:Tensor, unconditional_conditioning:Tensor, *args, **kwargs) -> Tuple[Tensor, Tensor]:
         '''
         This function will replace the original p_sample_ddim function in ldm/diffusionmodels/ddim.py
@@ -142,7 +134,6 @@ class MultiDiffusion(TiledDiffusion):
                 return self.sampler_forward(x, *args, **kwargs)
             return self.ddim_custom_forward(x, cond_in, bbox, ts, forward_func, *args, **kwargs)
 
-        print('Entrou no ddim_forward')
         return self.sample_one_step(x_in, org_func, repeat_func, custom_func)
 
     def sample_one_step(self, x_in:Tensor, org_func: Callable, repeat_func:Callable, custom_func:Callable) -> Union[Tensor, Tuple[Tensor, Tensor]]:
@@ -165,8 +156,6 @@ class MultiDiffusion(TiledDiffusion):
         # Background sampling (grid bbox)
         if self.draw_background:
             for batch_id, bboxes in enumerate(self.batched_bboxes):
-                if state.interrupted: return x_in
-
                 # batching
                 x_tile_list = []
                 for bbox in bboxes:
@@ -198,8 +187,6 @@ class MultiDiffusion(TiledDiffusion):
         x_feather_pred_buffer = None
         if len(self.custom_bboxes) > 0:
             for bbox_id, bbox in enumerate(self.custom_bboxes):
-                if state.interrupted: return x_in
-
                 if not self.p.disable_extra_networks:
                     with devices.autocast():
                         extra_networks.activate(self.p, bbox.extra_network_data)
@@ -262,7 +249,6 @@ class MultiDiffusion(TiledDiffusion):
 
         return x_out if self.is_kdiff else (x_out, x_pred_out)
     
-
     def get_noise(self, x_in:Tensor, sigma_in:Tensor, cond_in:Dict[str, Tensor], step:int) -> Tensor:
         # NOTE: The following code is analytically wrong but aesthetically beautiful
         local_cond_in = cond_in.copy()

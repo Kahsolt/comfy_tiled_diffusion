@@ -3,7 +3,8 @@ import math
 import torch
 
 import comfy.model_management
-import comfy.samplers
+
+from .samplers import *
 
 """ Tiled Diffusion Sample Methods """
 
@@ -78,7 +79,7 @@ def sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative
 
     models = load_additional_models(positive, negative)
 
-    sampler = comfy.samplers.KSampler(real_model, steps=steps, device=device, sampler=sampler_name, scheduler=scheduler, denoise=denoise, model_options=model.model_options)
+    sampler = KSampler(real_model, steps=steps, device=device, sampler=sampler_name, scheduler=scheduler, denoise=denoise, model_options=model.model_options)
 
     samples = sampler.sample(noise, positive_copy, negative_copy, cfg=cfg, latent_image=latent_image, start_step=start_step, last_step=last_step, force_full_denoise=force_full_denoise, denoise_mask=noise_mask, sigmas=sigmas, callback=callback, disable_pbar=disable_pbar)
     samples = samples.cpu()

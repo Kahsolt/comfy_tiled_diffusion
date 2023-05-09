@@ -9,6 +9,8 @@ from comfy.k_diffusion import sampling as k_diffusion_sampling
 from comfy.ldm.models.diffusion.ddim import DDIMSampler
 from comfy.ldm.modules.diffusionmodules.util import make_ddim_timesteps
 
+from .multidiffusion import *
+
 """ Tiled Diffusion Sampler Methods """
 
 #The main sampling function shared by all the samplers
@@ -541,6 +543,9 @@ class KSampler:
             self.sigmas = sigmas[-(steps + 1):]
 
     def sample(self, noise, positive, negative, cfg, latent_image=None, start_step=None, last_step=None, force_full_denoise=False, denoise_mask=None, sigmas=None, callback=None, disable_pbar=False):
+        # TODO Init MultiDiffusion
+        multi = MultiDiffusion
+        
         if sigmas is None:
             sigmas = self.sigmas
         sigma_min = self.sigma_min
@@ -608,11 +613,18 @@ class KSampler:
             max_denoise = True
 
         with precision_scope(model_management.get_autocast_device(self.device)):
+            print(self.sampler)
             if self.sampler == "uni_pc":
+                # TODO Apply K-Diffusion sampling
+
                 samples = uni_pc.sample_unipc(self.model_wrap, noise, latent_image, sigmas, sampling_function=sampling_function, max_denoise=max_denoise, extra_args=extra_args, noise_mask=denoise_mask, callback=callback, disable=disable_pbar)
             elif self.sampler == "uni_pc_bh2":
+                # TODO Apply K-Diffusion sampling
+
                 samples = uni_pc.sample_unipc(self.model_wrap, noise, latent_image, sigmas, sampling_function=sampling_function, max_denoise=max_denoise, extra_args=extra_args, noise_mask=denoise_mask, callback=callback, variant='bh2', disable=disable_pbar)
             elif self.sampler == "ddim":
+                # TODO Apply K-Diffusion sampling
+
                 timesteps = []
                 for s in range(sigmas.shape[0]):
                     timesteps.insert(0, self.model_wrap.sigma_to_t(sigmas[s]))
@@ -645,6 +657,12 @@ class KSampler:
                                                      end_step=sigmas.shape[0] - 1,
                                                      disable_pbar=disable_pbar)
             else:
+                # TODO Apply K-Diffusion sampling
+
+                # samples = multi.sample_one_step(x_in, org_func, repeat_func, custom_func)
+                multi.test()
+
+                # Old implementation
                 extra_args["denoise_mask"] = denoise_mask
                 self.model_k.latent_image = latent_image
                 self.model_k.noise = noise
