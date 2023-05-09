@@ -23,7 +23,7 @@ git clone https://github.com/paulo-coronado/comfy_tiled_diffusion/
 
 ### Version 0.1
  - [x] Upscaling with models and custom resizing
- - [ ] MultiDiffusion support - *UNDER CONSTRUCTION* 🛠️
+ - [ ] MultiDiffusion support - *UNDER DEVELOPMENT* 🛠️
  - [ ] ControlNet Tile 1.1 support
  - [ ] Mixture of Diffusers support
 
